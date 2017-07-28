@@ -2,7 +2,7 @@
 #![no_std]
 
 extern crate x86;
-use x86::shared::io::{inb, outb};
+use x86::shared::io::{inb,outb};
 
 // PIC input/output ports
 const PIC1_CMD_IO_PORT: u16 = 0x0020;
@@ -68,45 +68,4 @@ pub fn eoi_for(interrupt_number: isize) {
             _ => {},
         }
     }
-}
-
-// PIT constants
-/// References
-/// * http://wiki.osdev.org/Programmable_Interval_Timer
-/// * https://en.wikibooks.org/wiki/X86_Assembly/Programmable_Interval_Timer
-pub const PIT_BASE_FREQUENCY: u32 = 1193182;
-//const PIT_CHANNEL0_IO_PORT: u16 = 0x40;
-//const PIT_CHANNEL1_IO_PORT: u16 = 0x41;
-//const PIT_CHANNEL2_IO_PORT: u16 = 0x42;
-//const PIT_COMMAND_PORT: u16 = 0x43;
-//const PIT_CHANNEL_COUNT: usize = 3;
-//const PIT_CHANNEL_IO_PORTS: [u16; PIT_CHANNEL_COUNT] = [
-//    PIT_CHANNEL0_IO_PORT,
-//    PIT_CHANNEL1_IO_PORT,
-//    PIT_CHANNEL2_IO_PORT
-//];
-
-#[allow(unused_variables)]
-pub fn set_pit_divisor(channel: usize, divisor: u16) {
-    let byte = PIT_BASE_FREQUENCY/(divisor as u32);
-    let lobyte = (byte & 0xFF) as u8;
-    let hibyte = ((byte >> 8) & 0xFF) as u8;
-    unsafe {
-//        outb(PIT_COMMAND_PORT, 0b00110100); // channel 0, lobyte/hibyte, rate generator
-//        outb(PIT_COMMAND_PORT, lobyte);
-//        outb(PIT_COMMAND_PORT, hibyte);
-        asm!("
-            mov al, 0x36
-            out 0x43, al
-
-            mov ax, $0
-            out 0x40,al
-            mov al,ah
-            out 0x40,al
-        " :: "r"(divisor) :: "intel" );
-    }
-}
-
-#[test]
-fn test_channel_io_ports_arr() {
 }

@@ -15,61 +15,59 @@ use x86::shared::dtables;
 use x86::shared::dtables::DescriptorTablePointer;
 use x86::bits64::irq::IdtEntry;
 
+#[repr(C)]
+pub struct ExceptionStackFrame {
+    /// This value points to the instruction that should be executed when the interrupt
+    /// handler returns. For most interrupts, this value points to the instruction immediately
+    /// following the last executed instruction. However, for some exceptions (e.g., page faults),
+    /// this value points to the faulting instruction, so that the instruction is restarted on
+    /// return. See the documentation of the `Idt` fields for more details.
+    pub instruction_pointer: usize,
+    /// The code segment selector, padded with zeros.
+    pub code_segment: u64,
+    /// The flags register before the interrupt handler was invoked.
+    pub cpu_flags: u64,
+    /// The stack pointer at the time of the interrupt.
+    pub stack_pointer: usize,
+    /// The stack segment descriptor at the time of the interrupt (often zero in 64-bit mode).
+    pub stack_segment: u64,
+}
+
+impl core::fmt::Display for ExceptionStackFrame {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        write!(f, "Instruction Pointer: {:X}\nCPU Flags: {:X}\nStack Pointer: {:X}",
+            self.instruction_pointer,
+            self.cpu_flags,
+            self.stack_pointer
+        );
+        Ok(())
+    }
+}
+
 /// Creates an IDT entry.
 ///
 /// Creates an IDT entry that executes the expression in `body`.
 #[macro_export]
 macro_rules! make_idt_entry {
-    ($name:ident, $body:expr) => {{
-        fn body() {
+    ($name:ident, $esf:ident, $body:expr) => {{
+
+        use x86::bits64::irq::IdtEntry;
+        use interrupts::ExceptionStackFrame;
+        extern "x86-interrupt" fn $name($esf: &mut ExceptionStackFrame) {
+            unsafe {
+                asm!(""
+                    // output operands
+                    :
+                    // input operands
+                    :
+                    // clobbers
+                    : "rax", "rbx", "rcx", "rdx", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "rsp", "rflags"
+                    // options
+                    : "intel"
+                );
+            }
             $body
-        }
-
-        #[naked]
-        unsafe extern fn $name() {
-            asm!("push rbp
-                  push r15
-                  push r14
-                  push r13
-                  push r12
-                  push r11
-                  push r10
-                  push r9
-                  push r8
-                  push rsi
-                  push rdi
-                  push rdx
-                  push rcx
-                  push rbx
-                  push rax
-                  mov rsi, rsp
-                  push rsi
-
-                  cli
-
-                  call $0
-
-                  sti
-
-                  add rsp, 8
-                  pop rax
-                  pop rbx
-                  pop rcx
-                  pop rdx
-                  pop rdi
-                  pop rsi
-                  pop r8
-                  pop r9
-                  pop r10
-                  pop r11
-                  pop r12
-                  pop r13
-                  pop r14
-                  pop r15
-                  pop rbp
-                  iretq" :: "s"(body as fn()) :: "volatile", "intel");
-            intrinsics::unreachable();
-        }
+        };
 
         use x86::shared::paging::VAddr;
         use x86::shared::PrivilegeLevel;
@@ -116,10 +114,29 @@ impl IdtRef {
 
     /// Enables interrupts.
     pub fn enable_interrupts(&self) {
-        // This unsafe fn is okay becuase, by virtue of having an IdtRef, we know that we have a
+        // This unsafe fn is okay because, by virtue of having an IdtRef, we know that we have a
         // valid Idt.
         unsafe {
             x86::shared::irq::enable();
         }
     }
 }
+
+// pub struct Context {
+//     /// This value points to the instruction that should be executed when the interrupt
+//     /// handler returns. For most interrupts, this value points to the instruction immediately
+//     /// following the last executed instruction. However, for some exceptions (e.g., page faults),
+//     /// this value points to the faulting instruction, so that the instruction is restarted on
+//     /// return. See the documentation of the `Idt` fields for more details.
+//     pub instruction_pointer: usize,
+//     /// The code segment selector, padded with zeros.
+//     pub code_segment: u64,
+//     /// The flags register before the interrupt handler was invoked.
+//     pub cpu_flags: u64,
+//     /// The stack pointer at the time of the interrupt.
+//     pub stack_pointer: usize,
+//     /// The stack segment descriptor at the time of the interrupt (often zero in 64-bit mode).
+//     pub stack_segment: u64,
+//
+//     pub "rax", "rbx", "rcx", "rdx", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "rsp", "rflags"
+// }

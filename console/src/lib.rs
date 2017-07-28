@@ -58,7 +58,7 @@ impl<T: AsMut<[u8]>> Vga<T> {
                 self.buffer[prev_position] = self.buffer[current_position];
             }
         }
-         
+
         for cb in 0..COL_BYTES/2 {
             self.buffer[((ROWS - 1) * COL_BYTES) + (cb * 2)] = ' ' as u8;
         }

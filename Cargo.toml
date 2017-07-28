@@ -15,6 +15,10 @@ console = { path = "console" }
 interrupts = { path = "interrupts" }
 pic = { path = "pic" }
 keyboard = { path = "keyboard" }
+tasks = { path = "tasks" }
+clock = { path = "clock" }
+memory = { path = "memory" }
+boot = { path = "boot" }
 
 [profile.dev]
 panic = "abort"

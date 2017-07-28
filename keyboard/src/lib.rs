@@ -60,6 +60,7 @@ pub fn from_scancode(code: usize) -> Option<char> {
         0x37 => '*', // Keypad
         0x4a => '-', // Keypad
         0x4e => '+', // Keypad
+        0x1C => '\n', // Main 'return' key
         _ => return None,
     };
 
