@@ -9,7 +9,7 @@ build = "build.rs"
 [dependencies]
 lazy_static = { version = "0.2.1", features = ["spin_no_std"] }
 rlibc = "1.0.0"
-spin = "0.4.4"
+spin = "0.4.5"
 x86 = "0.8.1"
 console = { path = "console" }
 interrupts = { path = "interrupts" }
@@ -19,6 +19,10 @@ tasks = { path = "tasks" }
 clock = { path = "clock" }
 memory = { path = "memory" }
 boot = { path = "boot" }
+
+# [dependencies.fringe]
+# version = "1.2.1"
+# default-features = false
 
 [profile.dev]
 panic = "abort"
