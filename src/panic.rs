@@ -1,3 +1,5 @@
+extern crate x86;
+
 use core::fmt;
 use ::CONTEXT;
 
@@ -6,6 +8,11 @@ use ::CONTEXT;
 pub extern fn rust_begin_panic(msg: fmt::Arguments,
                                file: &'static str,
                                line: u32) -> ! {
-    kprintln!(CONTEXT, "KERNEL PANIC in {}:{}! Message: {}", file, line, msg);
-    loop {}
+    // Disable interrupts
+    unsafe {
+        x86::shared::irq::disable();
+    }
+
+    kprint_force!(CONTEXT, "KERNEL PANIC in {}:{}! Message: {}\n", file, line, msg);
+    loop { unsafe { asm!("hlt") }}
 }

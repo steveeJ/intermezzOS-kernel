@@ -3,33 +3,30 @@
 #![feature(asm)]
 #![no_std]
 
-/// This function reads the CR3 register
-/// TODO: should interrupts be disabled for this function?
-pub unsafe fn get_cr3() -> usize {
-    let cr3: usize;
+/// This macro reads a specific register
+#[macro_export]
+macro_rules! get_register {
+    ( $reg_name:expr ) => {{
+        let reg: usize;
 
-    // Read cr3 via r8
-    unsafe {
-        asm!("
-                mov r8, cr3
-                "
-                // output operands
-                : "={r8}"(cr3)
-                // input operands
-                :
-                // clobbers
-                : "r8"
-                // options
-                : "intel"
+        // Read register via r8
+        asm!(concat!("mov r8, ", $reg_name)
+            // output operands
+            : "={r8}"(reg)
+            // input operands
+            :
+            // clobbers
+            : "r8"
+            // options
+            : "intel"
             );
-    };
-    cr3
+        reg
+    }}
 }
 
 pub mod stack {}
 
-pub mod paging {
-}
+pub mod paging {}
 
 #[cfg(test)]
 mod tests {

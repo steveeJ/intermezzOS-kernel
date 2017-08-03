@@ -29,7 +29,7 @@ start:
     mov [pagetable_2 + ecx * 8], eax
 
     inc ecx
-    cmp ecx, 1
+    cmp ecx, 512
     jne .map_pagetable_2
 
     ; move page table address to cr3

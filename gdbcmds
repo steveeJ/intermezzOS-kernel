@@ -1,0 +1,12 @@
+set disassembly-flavor intel
+layout split
+focus cmd
+# b kmain
+# *b intermezzos::panic::rust_begin_panic
+b src/panic.rs:17
+b intermezzos::task0
+b intermezzos::task1
+b intermezzos::task2
+# b intermezzos::kmain::isr32::schedule_and_dispatch
+c
+

@@ -35,10 +35,57 @@ pub struct ExceptionStackFrame {
 
 impl core::fmt::Display for ExceptionStackFrame {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "Instruction Pointer: {:X}\nCPU Flags: {:X}\nStack Pointer: {:X}",
+        write!(f, "
+        Instruction Pointer: 0x{:X}
+        Code Segment: 0x{:X}
+        CPU Flags: 0x{:X}
+        Stack Pointer: 0x{:X}
+        Stack Segment: 0x{:X}",
             self.instruction_pointer,
+            self.code_segment,
             self.cpu_flags,
-            self.stack_pointer
+            self.stack_pointer,
+            self.stack_segment,
+        );
+        Ok(())
+    }
+}
+
+#[repr(C)]
+pub struct ErrorExceptionStackFrame {
+    /// Some Exceptions like the GPF pass an error code
+    pub error_code: u64,
+    /// This value points to the instruction that should be executed when the interrupt
+    /// handler returns. For most interrupts, this value points to the instruction immediately
+    /// following the last executed instruction. However, for some exceptions (e.g., page faults),
+    /// this value points to the faulting instruction, so that the instruction is restarted on
+    /// return. See the documentation of the `Idt` fields for more details.
+    pub instruction_pointer: usize,
+    /// The code segment selector, padded with zeros.
+    pub code_segment: u64,
+    /// The flags register before the interrupt handler was invoked.
+    pub cpu_flags: u64,
+    /// The stack pointer at the time of the interrupt.
+    pub stack_pointer: usize,
+    /// The stack segment descriptor at the time of the interrupt (often zero in 64-bit mode).
+    pub stack_segment: u64,
+}
+
+impl core::fmt::Display for ErrorExceptionStackFrame {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        write!(f, "
+        Error Code: {},
+        Instruction Pointer: 0x{:X}
+        Code Segment: 0x{:X}
+        CPU Flags: 0x{:X}
+        Stack Pointer: 0x{:X}
+        Stack Segment: 0x{:X}",
+            self.error_code,
+            self.instruction_pointer,
+            self.code_segment,
+            self.cpu_flags,
+            self.stack_pointer,
+            self.stack_segment,
         );
         Ok(())
     }
@@ -49,11 +96,11 @@ impl core::fmt::Display for ExceptionStackFrame {
 /// Creates an IDT entry that executes the expression in `body`.
 #[macro_export]
 macro_rules! make_idt_entry {
-    ($name:ident, $esf:ident, $body:expr) => {{
+    ($name:ident, $esf:ident, $esf_type:ident, $body:expr) => {{
 
         use x86::bits64::irq::IdtEntry;
-        use interrupts::ExceptionStackFrame;
-        extern "x86-interrupt" fn $name($esf: &mut ExceptionStackFrame) {
+        use interrupts::$esf_type;
+        extern "x86-interrupt" fn $name($esf: &mut $esf_type) {
             unsafe {
                 asm!(""
                     // output operands
@@ -61,7 +108,14 @@ macro_rules! make_idt_entry {
                     // input operands
                     :
                     // clobbers
-                    : "rax", "rbx", "rcx", "rdx", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "rsp", "rflags"
+                    : "rax",   "rbx",   "rcx",   "rdx", "rsi",   "rdi",   "rbp",   "rsp",
+                      "r8",    "r9",    "r10",   "r11",   "r12",   "r13",   "r14",   "r15",
+                      "mm0",   "mm1",   "mm2",   "mm3",   "mm4",   "mm5",   "mm6",   "mm7",
+                      "xmm0",  "xmm1",  "xmm2",  "xmm3",  "xmm4",  "xmm5",  "xmm6",  "xmm7",
+                      "xmm8",  "xmm9",  "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
+                      "xmm16", "xmm17", "xmm18", "xmm19", "xmm20", "xmm21", "xmm22", "xmm23",
+                      "xmm24", "xmm25", "xmm26", "xmm27", "xmm28", "xmm29", "xmm30", "xmm31",
+                      "cc", "dirflag", "fpsr", "flags", "memory"
                     // options
                     : "intel"
                 );
