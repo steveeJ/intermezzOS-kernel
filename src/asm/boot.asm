@@ -84,9 +84,9 @@ gdt64: ; global (segment) descriptor table
     dq (1<<41) | (1<<43) | (1<<44) | (1<<47) | (1<<53) ; (code segment (41 readable, 43+44 segment type code, 47 present bit, 53 64-bit flag)
 .data: equ $ - gdt64
     dq (1<<41) | (1<<44) | (1<<47); data segment (41 writable, 44 segment type data, 47 present bit)
-.tss: equ $ - gdt64 ; TSS Descriptor
-    dq 0 ; reserve memory
-    dq 0 ; for the tss
+; .tss: equ $ - gdt64 ; TSS Descriptor
+;     dq 0 ; reserve memory
+;     dq 0 ; for the tss
 .pointer:
     dw $ - gdt64 - 1
     dq gdt64

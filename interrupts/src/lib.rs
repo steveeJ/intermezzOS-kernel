@@ -74,7 +74,7 @@ pub struct ErrorExceptionStackFrame {
 impl core::fmt::Display for ErrorExceptionStackFrame {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "
-        Error Code: {},
+        Error Code: 0x{:X}
         Instruction Pointer: 0x{:X}
         Code Segment: 0x{:X}
         CPU Flags: 0x{:X}
@@ -117,7 +117,7 @@ macro_rules! make_idt_entry {
                       "xmm24", "xmm25", "xmm26", "xmm27", "xmm28", "xmm29", "xmm30", "xmm31",
                       "cc", "dirflag", "fpsr", "flags", "memory"
                     // options
-                    : "intel"
+                    : "intel" "volatile"
                 );
             }
             $body
@@ -128,8 +128,12 @@ macro_rules! make_idt_entry {
 
         let handler = VAddr::from_usize($name as usize);
 
-        // last is "block", idk
-        IdtEntry::new(handler, 0x8, PrivilegeLevel::Ring0, false)
+        // last is "block". It influences the Gate's type field as follows:
+        // * false: 1111 (64-bit Trap Gate)
+        // * true:  1110 (64-bit Interrupt Gate)
+        // Ref.: AMD64 Architecture Programmer’s Manual Volume 2: System Programming
+        // Table 4-6. System-Segment Descriptor Types—Long Mode (continued)
+        IdtEntry::new(handler, 0x8, PrivilegeLevel::Ring0, true)
     }};
 }
 

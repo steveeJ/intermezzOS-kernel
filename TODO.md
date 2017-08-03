@@ -117,7 +117,24 @@ Problems/TODO
 - [x] One thread with a simple counting for loop doesn't work properly
     * Store/Restore the registers?
     **This is done by the compiler, but not all registers were passed as clobbers**
-- [ ] Two threads with a simple counting for loop don't work properly
+- [x] Two threads with a simple counting for loop don't work properly
+- [ ] Two threads with a simple counting for loop don't work properly in **gdb mode**
+    * General-Protection Exception when switching from Task 1 to Task 2:
+        * CPU-Flags: 0x200246: '1000000000001001000110'
+    * GPE when switching from Task 1 to Task 2
+        * Error Code: 0xE678
+        * RIP is on `iretq` from ISR32
+        * Last context switch was to ISR17 (alignment-check)!?
+
+    The issue seems to be that the ISR pro-/epilogue is interruptible.
+    When debugging, several interrupts can get queued so the problem appears quickly.
+
+- [ ] Check out The exact difference of the IdtEntry's block true/false behavior
+    * false: 10001111 (64-bit Trap Gate)
+    * true:  10001110 (64-bit Interrupt Gate)
+    From AMD Manual "Table 4-6. System-Segment Descriptor Types—Long Mode (continued)"
+    Probably it's not ideal that all exceptions/interrupts use the same setting.
+- [ ] Use a separate software interrupt for the scheduler/dispatcher?
 
 ## OS Debugging
 

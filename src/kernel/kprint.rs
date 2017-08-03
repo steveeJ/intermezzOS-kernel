@@ -37,7 +37,7 @@ macro_rules! kprint {
 /// ```
 #[macro_export]
 macro_rules! kprint_try {
-    ($ctx:ident, $($arg:tt)*) => ({
+    ($ctx:ident, $($arg:tt)*) => ({{
         use core::fmt::Write;
         let vga_guard = $ctx.vga.try_lock();
 
@@ -47,7 +47,7 @@ macro_rules! kprint_try {
             vga.flush();
         }
 
-    });
+    }});
 }
 
 /// Prints something to the screen forcefully
