@@ -357,7 +357,9 @@ pub extern "C" fn kmain() -> ! {
                                   "Switching from Task {} to Task {}.\nOld StackFrame: {}",
                                   tsi.current_task,
                                   tsi.next_task,
-                                  esf);
+                                  0,
+                                //   esf
+                                  );
 
                     let next_esf = tsi.prepare_next(esf);
 
@@ -567,8 +569,9 @@ fn task1() {
     let mut i: u64 = 2;
     let mut prev_i: u64 = 0;
     loop {
-        assert_eq!(i, prev_i + 2);
-        assert_eq!(i % 2, 0);
+        if i != prev_i + 2 || i % 2 != 0 {
+            panic!("Something went wrong. {}/{} {:x}/{:x}", i, &i, prev_i, &prev_i);
+        }
 
         prev_i = i;
         i += 2;
@@ -579,8 +582,9 @@ fn task2() {
     let mut i: u64 = 3;
     let mut prev_i: u64 = 1;
     loop {
-        assert_eq!(i, prev_i + 2);
-        assert_eq!(i % 2, 1);
+        if i != prev_i + 2 || i % 2 != 1 {
+            panic!("Something went wrong. {}/{} {:x}/{:x}", i, &i, prev_i, &prev_i);
+        }
 
         prev_i = i;
         i += 2;
