@@ -15,6 +15,7 @@ use x86::shared::dtables;
 use x86::shared::dtables::DescriptorTablePointer;
 use x86::bits64::irq::IdtEntry;
 
+#[derive(Clone,Copy)]
 #[repr(C)]
 pub struct ExceptionStackFrame {
     /// This value points to the instruction that should be executed when the interrupt
@@ -179,22 +180,3 @@ impl IdtRef {
         }
     }
 }
-
-// pub struct Context {
-//     /// This value points to the instruction that should be executed when the interrupt
-//     /// handler returns. For most interrupts, this value points to the instruction immediately
-//     /// following the last executed instruction. However, for some exceptions (e.g., page faults),
-//     /// this value points to the faulting instruction, so that the instruction is restarted on
-//     /// return. See the documentation of the `Idt` fields for more details.
-//     pub instruction_pointer: usize,
-//     /// The code segment selector, padded with zeros.
-//     pub code_segment: u64,
-//     /// The flags register before the interrupt handler was invoked.
-//     pub cpu_flags: u64,
-//     /// The stack pointer at the time of the interrupt.
-//     pub stack_pointer: usize,
-//     /// The stack segment descriptor at the time of the interrupt (often zero in 64-bit mode).
-//     pub stack_segment: u64,
-//
-//     pub "rax", "rbx", "rcx", "rdx", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "rsp", "rflags"
-// }

@@ -70,27 +70,42 @@ lazy_static! {
     static ref TSI: Mutex<TaskStateInformation> = Mutex::new(
         TaskStateInformation {
             current_task: 0,
+            next_task: 0,
             tasks: [
                 TaskEntry {
-                    ip: TASK_ENTRY_UNITIALIZED_USIZE,
-                    sp: TASK_ENTRY_UNITIALIZED_USIZE,
-                    cpu_flags: TASK_ENTRY_UNITIALIZED_U64,
+                    name: "Boot Task",
+                    esf: interrupts::ExceptionStackFrame{
+                        code_segment: 0x8,
+                        stack_segment: 0x10,
+                        instruction_pointer: TASK_ENTRY_UNITIALIZED_USIZE,
+                        cpu_flags: TASK_ENTRY_UNITIALIZED_U64,
+                        stack_pointer: TASK_ENTRY_UNITIALIZED_USIZE,
+                    },
                 },
                 TaskEntry {
-                    ip: task1 as usize,
-                    sp: TASK1_STACK.end,
-                    cpu_flags: TASK_ENTRY_UNITIALIZED_U64,
+                    name: "Task 1",
+                    esf: interrupts::ExceptionStackFrame{
+                        code_segment: 0x8,
+                        stack_segment: 0x10,
+                        instruction_pointer: task1 as usize,
+                        cpu_flags: TASK_ENTRY_UNITIALIZED_U64,
+                        stack_pointer: TASK1_STACK.end,
+                    },
                 },
                 TaskEntry {
-                    ip: task2 as usize,
-                    sp: TASK2_STACK.end,
-                    cpu_flags: TASK_ENTRY_UNITIALIZED_U64,
+                    name: "Task 2",
+                    esf: interrupts::ExceptionStackFrame{
+                        code_segment: 0x8,
+                        stack_segment: 0x10,
+                        instruction_pointer: task2 as usize,
+                        cpu_flags: TASK_ENTRY_UNITIALIZED_U64,
+                        stack_pointer: TASK2_STACK.end,
+                    },
                 },
             ],
         }
     );
 }
-
 
 #[no_mangle]
 /// According to gdb the page tables are located as follows
@@ -308,67 +323,61 @@ pub extern "C" fn kmain() -> ! {
     CONTEXT.idt.set_handler(18, isr_mc);
 
     // IRQ0 (0) on PIC1 (32), so IDT index is 32
+    // Timer ISR to increase the clock and call the scheduler
+    // If the scheduler choses a different task, the dispatcher
+    // must be called by the interrupt return (`iretq`)
     let timer = make_idt_entry!(isr32, esf, ExceptionStackFrame, {
         CLOCK.tick();
 
-        fn schedule_and_dispatch(interval: &str,
-                                 ticks: &u64,
-                                 uptime: &clock::Duration,
-                                 interval_ticks: &u64,
-                                 esf: &mut ExceptionStackFrame) {
-            // kprintln!(CONTEXT,
-            //           "Interval {}/{} ({} ticks): {}",
-            //           interval,
-            //           interval_ticks,
-            //           ticks,
-            //           uptime);
+        fn test_time(interval: &str,
+                     ticks: &u64,
+                     uptime: &clock::Duration,
+                     interval_ticks: &u64,
+                     esf: &mut ExceptionStackFrame) {
+            kprintln!(CONTEXT,
+                      "Interval {}/{} ({} ticks): {} / ESF: {}",
+                      interval,
+                      interval_ticks,
+                      ticks,
+                      uptime,
+                      esf,
+                      );
+        };
 
-            let mut tsi = TSI.lock();
-            let next_task = scheduler(&tsi);
-            if next_task != tsi.current_task {
-                // Dispatch the next_task
-                kprintln_try!(CONTEXT,
-                              "Switching from Task {} to Task {}.\nOld StackFrame: {}",
-                              tsi.current_task,
-                              next_task,
-                              esf);
-                let alligned_stack_pointer = (esf.stack_pointer + 0x10 - 1) & !(0x10 - 1);
-                // assert_eq!(esf.stack_pointer, alligned_stack_pointer);
+        fn manage_tasks(_: &str,
+                        _: &u64,
+                        _: &clock::Duration,
+                        _: &u64,
+                        esf: &mut ExceptionStackFrame) {
+            if let Some(mut tsi) = TSI.try_lock() {
+                kprintln_try!(CONTEXT, "We got the TSI lock!");
 
-                tsi.tasks[tsi.current_task].ip = esf.instruction_pointer;
-                tsi.tasks[tsi.current_task].sp = esf.stack_pointer;
-                tsi.tasks[tsi.current_task].cpu_flags = esf.cpu_flags;
+                if tsi.schedule_next() {
+                    kprintln_try!(CONTEXT,
+                                  "Switching from Task {} to Task {}.\nOld StackFrame: {}",
+                                  tsi.current_task,
+                                  tsi.next_task,
+                                  esf);
 
-                // assert_eq!(esf.instruction_pointer % 0x8, 0);
+                    let next_esf = tsi.prepare_next(esf);
 
-                if tsi.tasks[next_task].ip != TASK_ENTRY_UNITIALIZED_USIZE {
-                    esf.instruction_pointer = tsi.tasks[next_task].ip;
+                    // TODO: actually replace the stack
+                    *esf = *next_esf;
+
+                    kprintln_try!(CONTEXT, "New StackFrame: {}", next_esf);
                 }
+            } else {
+                kprintln_try!(CONTEXT, "We didn't get the TSI lock!");
+            }
+        };
 
-                if tsi.tasks[next_task].sp != TASK_ENTRY_UNITIALIZED_USIZE {
-                    esf.stack_pointer = tsi.tasks[next_task].sp;
-                }
-
-                if tsi.tasks[next_task].cpu_flags != TASK_ENTRY_UNITIALIZED_U64 {
-                    esf.cpu_flags = tsi.tasks[next_task].cpu_flags;
-                }
-
-                kprintln_try!(CONTEXT, "New StackFrame: {}", esf);
-
-                tsi.current_task = next_task;
-            };
-        }
+        type interval_t = (&'static str,
+                           u64,
+                           fn(&str, &u64, &clock::Duration, &u64, &mut ExceptionStackFrame));
 
 
-
-        let intervals: [(&str,
-                        u64,
-                        fn(&str,
-                           &u64,
-                           &clock::Duration,
-                           &u64,
-                           &mut ExceptionStackFrame)); 1] =
-            [("10ms", 10_000_000 / CLOCK.resolution, schedule_and_dispatch)];
+        let intervals: [interval_t; 2] = [("50ms", 50_000_000 / CLOCK.resolution, manage_tasks),
+                                          ("500ms", 500_000_000 / CLOCK.resolution, test_time)];
 
         let (ticks, uptime) = CLOCK.ticks().unwrap();
         for &(interval, interval_ticks, f) in intervals.iter() {
@@ -471,15 +480,74 @@ const TASK_ENTRY_UNITIALIZED_U64: u64 = TASK_ENTRY_UNITIALIZED_USIZE as u64;
 
 
 struct TaskEntry {
-    ip: usize,
-    sp: usize,
-    cpu_flags: u64,
+    name: &'static str,
+    esf: interrupts::ExceptionStackFrame,
     // stack: &'static Stack,
 }
 
 struct TaskStateInformation {
     current_task: usize,
+    next_task: usize,
     tasks: [TaskEntry; 3],
+}
+
+impl TaskStateInformation {
+    /// Choose the next task.
+    /// Return true if tasks will be switched
+    pub fn schedule_next(&mut self) -> bool {
+        self.next_task = (self.current_task + 1) % self.tasks.len();
+        self.next_task != self.current_task
+    }
+
+    /// Returns the new esf that can be used by the ISR
+    pub fn prepare_next(&mut self,
+                        esf: &interrupts::ExceptionStackFrame)
+                        -> &interrupts::ExceptionStackFrame {
+        // let alligned_stack_pointer = (esf.stack_pointer + 0x10 - 1) & !(0x10 - 1);
+        // assert_eq!(esf.stack_pointer, alligned_stack_pointer);
+
+        {
+            let old_esf = &mut self.tasks[self.current_task].esf;
+            old_esf.instruction_pointer = esf.instruction_pointer;
+            old_esf.stack_pointer = esf.stack_pointer;
+            old_esf.cpu_flags = esf.cpu_flags;
+        }
+
+        // assert_eq!(esf.instruction_pointer % 0x8, 0);
+
+        let next_esf = &mut self.tasks[self.next_task].esf;
+
+        next_esf.instruction_pointer = if next_esf.instruction_pointer ==
+                                          TASK_ENTRY_UNITIALIZED_USIZE {
+            esf.instruction_pointer
+        } else {
+            next_esf.instruction_pointer
+        };
+
+        next_esf.stack_pointer = if next_esf.stack_pointer == TASK_ENTRY_UNITIALIZED_USIZE {
+            esf.stack_pointer
+        } else {
+            next_esf.stack_pointer
+        };
+
+        next_esf.instruction_pointer = if next_esf.instruction_pointer ==
+                                          TASK_ENTRY_UNITIALIZED_USIZE {
+            esf.instruction_pointer
+        } else {
+            next_esf.instruction_pointer
+        };
+
+        next_esf.cpu_flags = if next_esf.cpu_flags == TASK_ENTRY_UNITIALIZED_U64 {
+            esf.cpu_flags
+        } else {
+            next_esf.cpu_flags
+        };
+
+        // TODO: move this to a place where the task has *really* been switched
+        self.current_task = self.next_task;
+
+        next_esf
+    }
 }
 
 const STACKS_START: usize = 0x200_000; // 2MiB
@@ -488,9 +556,11 @@ const STACK_ALIGNMENT: usize = 0x10;
 static TASK1_STACK: Stack = STACKS_START + 1 * STACK_SIZE..STACKS_START + 2 * STACK_SIZE;
 static TASK2_STACK: Stack = STACKS_START + 2 * STACK_SIZE..STACKS_START + 3 * STACK_SIZE;
 
-/// Get next Task ID
-fn scheduler(tsi: &TaskStateInformation) -> usize {
-    (tsi.current_task + 1) % tsi.tasks.len()
+/// Scheduler and Dispatch function - called only via the timer interrupt
+///
+#[naked]
+fn schedule_and_dispatch() -> usize {
+    unimplemented!();
 }
 
 fn task1() {

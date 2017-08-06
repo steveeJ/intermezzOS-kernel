@@ -145,3 +145,22 @@ Problems/TODO
 
 -[ ] Function Prologue
     https://stackoverflow.com/questions/25545994/how-does-gdb-determine-the-address-to-break-at-when-you-do-break-function-name
+
+
+# Complications
+
+## Mutable Borrow from Two Different Slice Elements
+
+```
+error[E0499]: cannot borrow `self.tasks[..].esf` as mutable more than once at a time
+   --> src/main.rs:515:29
+    |
+508 |         let old_esf = &mut self.tasks[self.current_task].esf;
+    |                            --------------------------------- first mutable borrow occurs here
+...
+515 |         let next_esf = &mut self.tasks[self.next_task].esf;
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ second mutable borrow occurs here
+...
+547 |     }
+    |     - first borrow ends here
+```
