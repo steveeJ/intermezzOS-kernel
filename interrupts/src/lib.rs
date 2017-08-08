@@ -37,16 +37,30 @@ pub struct ExceptionStackFrame {
 impl core::fmt::Display for ExceptionStackFrame {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "
-        Instruction Pointer: 0x{:X}
-        Code Segment: 0x{:X}
-        CPU Flags: 0x{:X}
-        Stack Pointer: 0x{:X}
-        Stack Segment: 0x{:X}",
+        Instruction Pointer: 0x{:x}
+        Code Segment: 0x{:x}
+        CPU Flags: 0x{:x}
+        Stack Pointer: 0x{:x}
+        Stack Segment: 0x{:x}",
             self.instruction_pointer,
             self.code_segment,
             self.cpu_flags,
             self.stack_pointer,
             self.stack_segment,
+        );
+        Ok(())
+    }
+}
+
+impl core::fmt::Debug for ExceptionStackFrame {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        // write!(f, "IP:0x{:X} CS:0x{:X} Flags:0x{:X} SP: 0x{:X} SS: 0x{:X}",
+        write!(f, "IP:0x{:06x} SP: 0x{:06x}",
+            self.instruction_pointer,
+            // self.code_segment,
+            // self.cpu_flags,
+            self.stack_pointer,
+            // self.stack_segment,
         );
         Ok(())
     }
@@ -97,7 +111,7 @@ impl core::fmt::Display for ErrorExceptionStackFrame {
 /// Creates an IDT entry that executes the expression in `body`.
 #[macro_export]
 macro_rules! make_idt_entry {
-    ($name:ident, $esf:ident, $esf_type:ident, $body:expr) => {{
+    ($name:ident, $esf:ident, $esf_type:ident, $ir_gate:expr, $body:expr) => {{
 
         use x86::bits64::irq::IdtEntry;
         use interrupts::$esf_type;
@@ -134,7 +148,7 @@ macro_rules! make_idt_entry {
         // * true:  1110 (64-bit Interrupt Gate)
         // Ref.: AMD64 Architecture Programmer’s Manual Volume 2: System Programming
         // Table 4-6. System-Segment Descriptor Types—Long Mode (continued)
-        IdtEntry::new(handler, 0x8, PrivilegeLevel::Ring0, true)
+        IdtEntry::new(handler, 0x8, PrivilegeLevel::Ring0, $ir_gate)
     }};
 }
 

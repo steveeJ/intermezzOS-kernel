@@ -158,7 +158,7 @@ Problems/TODO
     0x10a031 <intermezzos::kmain::isr32+993>        iretq
     ```
 
-    I was able to verify that this incorrect address is being pushed from the stack:
+    I was able to verify that this incorrect address is being pop'd from the stack:
     ```
     (gdb) i r rbp rsp
     rbp            0x7f830  0x7f830
@@ -172,7 +172,59 @@ Problems/TODO
     rbp            0x4ffff8 0x4ffff8
     rsp            0x7f838  0x7f838
     ```
-    It's unclear how this address gets onto the stack.
+
+    **This doesn't happen if the manage_tasks runs every ISR32**.
+
+    Running manage_tasks **every ISR32**:
+    1. System Boot
+    2. ISR
+        * rsp            0x7f818  0x7f818
+        * rbp            0x7f858  0x7f858
+        * 0 -> 1
+    3. Task 1 Runs?
+    4. ISR
+        * rsp            0x3fffc8 0x3fffc8
+        * rbp            0x7f858  0x7f858
+        * 1 -> 2
+    5. Task 2 Runs?
+    6. ISR
+        * rsp            0x4fffc8 0x4fffc8
+        * rbp            0x7f858  0x7f858
+        * 2 -> 0
+    7. Task 0 Runs?
+    8. ISR
+        * rsp            0x7f818  0x7f818
+        * rbp            0x7f858  0x7f858
+        * 0 -> 1
+    9. Task 1 Runs?
+
+    Running manage_tasks **every other ISR32**:
+    1. System Boot
+    2. ISR
+        * rsp            0x7f818  0x7f818
+        * rbp            0x7f858  0x7f858
+        * 0 -> 1
+    3. Task 1 Runs?
+    4. ISR
+        * rsp            0x3fffc8 0x3fffc8
+        * rbp            0x7f858  0x7f858
+        * 1 -> 2
+    5. Task 2 Runs?
+    6. ISR
+        * rsp            0x4fffc8 0x4fffc8
+        * rbp            0x7f858  0x7f858
+        * 2 -> 0
+    7. Task 0 Runs?
+    8. ISR
+        * rsp            0x7f818  0x7f818
+        * rbp            0x7f858  0x7f858
+        * 0 -> 1
+    9. Task 1 Runs?
+
+
+    The RBP value is used to access local variables within the scheduled functions.
+    If it's set to a different task's RBP it will effectively use the other task's variables.
+
 
 - [ ] Check out The exact difference of the IdtEntry's block true/false behavior
     * false: 10001111 (64-bit Trap Gate)
@@ -180,6 +232,8 @@ Problems/TODO
     From AMD Manual "Table 4-6. System-Segment Descriptor Types—Long Mode (continued)"
     Probably it's not ideal that all exceptions/interrupts use the same setting.
 - [ ] Use a separate software interrupt for the scheduler/dispatcher?
+- [ ] **Correctly schedule the first task the first time**
+- [ ] Stack Alignment
 
 ## OS Debugging
 
