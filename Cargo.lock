@@ -2,6 +2,8 @@
 name = "tasks"
 version = "0.1.0"
 dependencies = [
+ "interrupts 0.1.0",
+ "spin 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "x86 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 

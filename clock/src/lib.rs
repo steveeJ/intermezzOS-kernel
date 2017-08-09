@@ -134,6 +134,7 @@ pub mod pit {
 
     impl Clock for Pit {
         fn start(&self) {
+            // TODO: check if the masks are required
             let lobyte = (self.divisor & 0xFF) as u8;
             let hibyte = ((self.divisor >> 8) & 0xFF) as u8;
             unsafe {

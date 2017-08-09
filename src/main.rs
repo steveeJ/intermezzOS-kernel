@@ -38,6 +38,7 @@ pub mod panic;
 extern crate intermezzos;
 
 use spin::Mutex;
+use core::mem;
 
 lazy_static! {
     static ref CONTEXT: intermezzos::kernel::Context = intermezzos::kernel::Context::new();
@@ -66,14 +67,12 @@ lazy_static! {
     /// ```
     static ref CLOCK: clock::pit::Pit = clock::pit::new(0,
         // (0x71ae) as u16);
-        (clock::pit::consts::BASE_FREQUENCY) as u16);
+        core::u16::MAX);
 
-    static ref TSI: Mutex<TaskStateInformation> = Mutex::new(
-        TaskStateInformation {
-            current_task: 0,
-            next_task: 0,
-            tasks: [
-                TaskEntry {
+
+    static ref TSI: Mutex<tasks::TaskStateInformation> = {
+        let tasklist = [
+            tasks::TaskEntry {
                     name: "Task 0",
                     esf: interrupts::ExceptionStackFrame{
                         code_segment: 0x8,
@@ -82,45 +81,42 @@ lazy_static! {
                         cpu_flags: 0x200202,
                         stack_pointer: TASK0_STACK.end,
                     },
-                    stack: &TASK0_STACK
-                },
-                TaskEntry {
+                    stack_bottom: TASK0_STACK.start,
+                    stack_top: TASK0_STACK.end,
+                    registers: tasks::TaskRegisters::empty(),
+                    },
+            tasks::TaskEntry {
                     name: "Task 1",
                     esf: interrupts::ExceptionStackFrame{
                         code_segment: 0x8,
                         stack_segment: 0x10,
                         instruction_pointer: task1 as usize,
                         cpu_flags: 0x200202,
-                        // cpu_flags: TASK_ENTRY_UNITIALIZED_U64,
                         stack_pointer: TASK1_STACK.end,
                     },
-                    stack: &TASK1_STACK,
-                },
-                TaskEntry {
+                    stack_bottom: TASK1_STACK.start,
+                    stack_top: TASK1_STACK.end,
+                    registers: tasks::TaskRegisters::empty(),
+                    },
+            tasks::TaskEntry {
                     name: "Task 2",
                     esf: interrupts::ExceptionStackFrame{
                         code_segment: 0x8,
                         stack_segment: 0x10,
-                        instruction_pointer: task1 as usize,
+                        instruction_pointer: task2 as usize,
                         cpu_flags: 0x200202,
-                        // cpu_flags: TASK_ENTRY_UNITIALIZED_U64,
                         stack_pointer: TASK2_STACK.end,
                     },
-                    stack: &TASK2_STACK,
-                },
-            ],
-        }
-    );
+                    stack_bottom: TASK2_STACK.start,
+                    stack_top: TASK2_STACK.end,
+                    registers: tasks::TaskRegisters::empty(),
+                    },
+        ];
+        Mutex::new(tasks::TaskStateInformation::new(tasklist))
+    };
 }
 
 #[no_mangle]
-/// According to gdb the page tables are located as follows
-/// (gdb) print &p2_table
-/// $3 = (<data variable, no debug info> *) 0x110000
-/// (gdb) print &p3_table
-/// $4 = (<data variable, no debug info> *) 0x10f000
-/// (gdb) print &pagetable_4
-/// $5 = (<data variable, no debug info> *) 0x10e000
 pub extern "C" fn kinit() {
 
     unsafe {
@@ -215,7 +211,6 @@ struct sgdt {
     pointer: u64,
     length: u16,
 }
-
 
 #[no_mangle]
 pub extern "C" fn kmain() -> ! {
@@ -334,6 +329,17 @@ pub extern "C" fn kmain() -> ! {
     // If the scheduler choses a different task, the dispatcher
     // must be called by the interrupt return (`iretq`)
     let timer = make_idt_entry!(isr32, esf, ExceptionStackFrame, true, {
+        let rbp_on_stack: *mut usize = unsafe { (get_register!("rbp") as *mut usize) };
+
+        // The prologue decreased the address by the register pushes
+        // TODO: explain why we decrease he offset by 1
+        let rax_offset = 1 - (mem::size_of::<tasks::TaskRegisters>() as isize / 8);
+        let rax_on_stack: *mut usize = unsafe { rbp_on_stack.offset(rax_offset) };
+        let registers_on_stack: &mut tasks::TaskRegisters =
+            unsafe { mem::transmute::<*mut usize, &mut tasks::TaskRegisters>(rax_on_stack) };
+
+        // kprintln!(CONTEXT, "{}", registers_on_stack);
+
         let begin_tsc = unsafe { x86::bits64::time::rdtsc() };
 
         CLOCK.tick();
@@ -374,19 +380,23 @@ pub extern "C" fn kmain() -> ! {
                       );
         };
 
-        fn manage_tasks(esf: &mut ExceptionStackFrame) {
+        fn manage_tasks(esf: &mut ExceptionStackFrame, registers: &mut tasks::TaskRegisters) {
             if let Some(mut tsi) = TSI.try_lock() {
                 // store esf of preempted task for reference
                 let preempted_esf = esf.clone();
                 let last_scheduled_task = tsi.current_task;
 
-                if !tsi.get_current_task().stack.contains(esf.stack_pointer) {
-                    // assume that the current task hasn't been scheduled yet if
-                    // the stack_pointer hasn't been updated
+                // assume that the current task had time to run if the stack pointer has been set accordingly
+                let current_task_dispatched = tsi.get_current_task()
+                    .get_stack()
+                    .contains(esf.stack_pointer);
+                if !current_task_dispatched {
                     *esf = tsi.get_current_task().esf;
+                    *registers = tsi.get_current_task().registers;
                 } else if tsi.schedule_next() {
-                    // replace the esf to cause the task switch
-                    *esf = *tsi.store_esf_and_return_next(esf);
+                    tsi.get_current_task_mut().registers = *registers;
+                    *esf = *tsi.mangle_esf_for_next(esf);
+                    *registers = tsi.get_current_task().registers;
                 };
 
                 // kprintln_try!(CONTEXT, "New StackFrame: {}", next_esf);
@@ -428,7 +438,7 @@ pub extern "C" fn kmain() -> ! {
 
         */
 
-        manage_tasks(esf);
+        manage_tasks(esf, registers_on_stack);
 
         pic::eoi_for(32);
 
@@ -520,115 +530,37 @@ pub fn stack_debug() {
     }
 }
 
-use tasks::stack::Stack;
-
-const TASK_ENTRY_UNITIALIZED_USIZE: usize = 0xdeadbeef;
-const TASK_ENTRY_UNITIALIZED_U64: u64 = TASK_ENTRY_UNITIALIZED_USIZE as u64;
-
-
-#[derive(Clone,Copy)]
-struct TaskEntry {
-    name: &'static str,
-    esf: interrupts::ExceptionStackFrame,
-    stack: &'static Stack,
-}
-
-struct TaskStateInformation {
-    current_task: usize,
-    next_task: usize,
-    tasks: [TaskEntry; 3],
-}
-
-impl TaskStateInformation {
-    /// Choose the next task.
-    /// Return true if tasks will be switched
-    pub fn schedule_next(&mut self) -> bool {
-        self.next_task = (self.current_task + 1) % self.tasks.len();
-        self.next_task != self.current_task
-    }
-
-    pub fn get_current_task(&self) -> TaskEntry {
-        self.tasks[self.current_task]
-    }
-
-    /// Update the esf of the current_task
-    /// Returns the new esf that can be used by the ISR
-    pub fn store_esf_and_return_next(&mut self,
-                                     esf: &interrupts::ExceptionStackFrame)
-                                     -> &interrupts::ExceptionStackFrame {
-        // let alligned_stack_pointer = (esf.stack_pointer + 0x10 - 1) & !(0x10 - 1);
-        // assert_eq!(esf.stack_pointer, alligned_stack_pointer);
-
-        {
-            let old_esf = &mut self.tasks[self.current_task].esf;
-            old_esf.instruction_pointer = esf.instruction_pointer;
-            old_esf.stack_pointer = esf.stack_pointer;
-            old_esf.cpu_flags = esf.cpu_flags;
-        }
-
-        let next_esf = &mut self.tasks[self.next_task].esf;
-
-        next_esf.instruction_pointer = if next_esf.instruction_pointer ==
-                                          TASK_ENTRY_UNITIALIZED_USIZE {
-            esf.instruction_pointer
-        } else {
-            next_esf.instruction_pointer
-        };
-
-        next_esf.stack_pointer = if next_esf.stack_pointer == TASK_ENTRY_UNITIALIZED_USIZE {
-            esf.stack_pointer
-        } else {
-            next_esf.stack_pointer
-        };
-
-        next_esf.instruction_pointer = if next_esf.instruction_pointer ==
-                                          TASK_ENTRY_UNITIALIZED_USIZE {
-            esf.instruction_pointer
-        } else {
-            next_esf.instruction_pointer
-        };
-
-        next_esf.cpu_flags = if next_esf.cpu_flags == TASK_ENTRY_UNITIALIZED_U64 {
-            esf.cpu_flags
-        } else {
-            next_esf.cpu_flags
-        };
-
-        // TODO: move this to a place where the task has *really* been switched
-        self.current_task = self.next_task;
-
-        next_esf
-    }
-}
-
 const STACKS_START: usize = 0x200_000; // 2MiB
 const STACK_SIZE: usize = 0x100_000; // 1MiB
 const STACK_ALIGNMENT: usize = 0x10;
-static TASK0_STACK: Stack = STACKS_START + 0 * STACK_SIZE..
-                            STACKS_START + 1 * STACK_SIZE - STACK_ALIGNMENT;
-static TASK1_STACK: Stack = STACKS_START + 1 * STACK_SIZE..
-                            STACKS_START + 2 * STACK_SIZE - STACK_ALIGNMENT;
-static TASK2_STACK: Stack = STACKS_START + 2 * STACK_SIZE..
-                            STACKS_START + 3 * STACK_SIZE - STACK_ALIGNMENT;
+const TASK0_STACK: tasks::stack::Stack = STACKS_START + 0 * STACK_SIZE..
+                                         STACKS_START + 1 * STACK_SIZE;
+const TASK1_STACK: tasks::stack::Stack = STACKS_START + 1 * STACK_SIZE..
+                                         STACKS_START + 2 * STACK_SIZE;
+const TASK2_STACK: tasks::stack::Stack = STACKS_START + 2 * STACK_SIZE..
+                                         STACKS_START + 3 * STACK_SIZE;
 
 /// Scheduler and Dispatch function - called only via the timer interrupt
 ///
 #[naked]
 fn schedule_and_dispatch() {
-    let te = TSI.lock().get_current_task();
+    let te = TSI.lock().get_current_task().clone();
 
     unsafe {
         asm!("
-            jmp $0
+            mov rbp, $0
+            jmp $1
             "
             // output operands
             :
             // input operands
-            :  "r"(te.esf.instruction_pointer) "{rsp}"(te.esf.stack_pointer)
+            : "r"(te.stack_bottom)
+                "r"(te.esf.instruction_pointer)
+                "{rsp}="(te.esf.stack_pointer)
             // clobbers
             :
             // options
-            : "intel" "volatile" "alignstack");
+            : "intel" "volatile");
     };
 }
 

@@ -231,9 +231,15 @@ Problems/TODO
     * true:  10001110 (64-bit Interrupt Gate)
     From AMD Manual "Table 4-6. System-Segment Descriptor Types—Long Mode (continued)"
     Probably it's not ideal that all exceptions/interrupts use the same setting.
-- [ ] Use a separate software interrupt for the scheduler/dispatcher?
-- [ ] **Correctly schedule the first task the first time**
-- [ ] Stack Alignment
+- [x] ~~Use a separate software interrupt for the scheduler/dispatcher?~~ Not for now
+- [x] **Correctly schedule the first task the first time**
+- [x] Set ALL REGISTERS correctly in ISR
+    First implementation manipulates the Stack directly, so that the function epilogue will pop the new values.
+    - [ ] Look for an alternative way to turn off the pro-/epilogue for the timer interrupt
+- [ ] Stack Alignment?
+- [ ] Write Macro for Stack Alocations
+- [ ] Replace runtime assertions with module tests where possible
+- [ ] Implement alloc crate?
 
 ## OS Debugging
 
@@ -262,4 +268,12 @@ error[E0499]: cannot borrow `self.tasks[..].esf` as mutable more than once at a 
 ...
 547 |     }
     |     - first borrow ends here
+```
+
+## Raw Pointers
+
+These are not the same!
+```
+        let rbp_on_stack: *mut usize = unsafe { (get_register!("rbp") as *mut usize) };
+        let rbp_on_stack: &mut usize = unsafe { &mut (get_register!("rbp") as usize) };
 ```

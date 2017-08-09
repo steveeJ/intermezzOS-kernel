@@ -1,14 +1,17 @@
 set disassembly-flavor intel
 layout split
+set logging overwrite on
+set logging on
 focus cmd
 b kmain
-b intermezzos::kmain::dispatch
+# b intermezzos::kmain::dispatch
 b src/panic.rs:17
 
 c
 
 b *(&intermezzos::kmain::isr32)
-b intermezzos::schedule_and_dispatch
+# b intermezzos::kmain::isr32
+# b intermezzos::schedule_and_dispatch
 b intermezzos::kmain::isr32::manage_tasks
 
 b intermezzos::task0
@@ -18,4 +21,3 @@ b intermezzos::task2
 
 display intermezzos::TASK1_CTR
 display intermezzos::TASK2_CTR
-
