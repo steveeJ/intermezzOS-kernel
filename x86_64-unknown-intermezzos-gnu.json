@@ -19,5 +19,5 @@
 		]
 	},
 	"disable-redzone": true,
-	"eliminate-frame-pointer": false
+	"stack-probes": true
 }

@@ -5,9 +5,12 @@
 #![feature(iterator_step_by)]
 #![feature(use_extern_macros)]
 #![feature(range_contains)]
+#![feature(compiler_builtins_lib)]
 
 #![no_std]
 #![no_main]
+
+extern crate compiler_builtins;
 
 #[macro_use]
 extern crate lazy_static;
@@ -79,10 +82,9 @@ lazy_static! {
                         stack_segment: 0x10,
                         instruction_pointer: task0 as usize,
                         cpu_flags: 0x200202,
-                        stack_pointer: TASK0_STACK.end,
+                        stack_pointer: TASK0_STACK.top,
                     },
-                    stack_bottom: TASK0_STACK.start,
-                    stack_top: TASK0_STACK.end,
+                    stack: TASK0_STACK,
                     registers: tasks::TaskRegisters::empty(),
                     },
             tasks::TaskEntry {
@@ -92,10 +94,9 @@ lazy_static! {
                         stack_segment: 0x10,
                         instruction_pointer: task1 as usize,
                         cpu_flags: 0x200202,
-                        stack_pointer: TASK1_STACK.end,
+                        stack_pointer: TASK1_STACK.top,
                     },
-                    stack_bottom: TASK1_STACK.start,
-                    stack_top: TASK1_STACK.end,
+                    stack: TASK1_STACK,
                     registers: tasks::TaskRegisters::empty(),
                     },
             tasks::TaskEntry {
@@ -105,16 +106,17 @@ lazy_static! {
                         stack_segment: 0x10,
                         instruction_pointer: task2 as usize,
                         cpu_flags: 0x200202,
-                        stack_pointer: TASK2_STACK.end,
+                        stack_pointer: TASK2_STACK.top,
                     },
-                    stack_bottom: TASK2_STACK.start,
-                    stack_top: TASK2_STACK.end,
+                    stack: TASK2_STACK,
                     registers: tasks::TaskRegisters::empty(),
                     },
         ];
         Mutex::new(tasks::TaskStateInformation::new(tasklist))
     };
 }
+
+// static TASK_COUNTER: &'static mut u64 = &mut 0;
 
 #[no_mangle]
 pub extern "C" fn kinit() {
@@ -223,54 +225,54 @@ pub extern "C" fn kmain() -> ! {
 
     // initilaze_tss();
 
-    let isr_de = make_idt_entry!(isr0, esf, ExceptionStackFrame, false, {
+    let isr_de = make_idt_entry!(isr0, esf: &ExceptionStackFrame, false, {
         panic!("Divide-by-Zero-Error Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(0, isr_de);
 
-    let isr_db = make_idt_entry!(isr1, esf, ExceptionStackFrame, false, {
+    let isr_db = make_idt_entry!(isr1, esf: &ExceptionStackFrame, false, {
         panic!("Debug Exception occurred. Exception Information: \n{}", esf);
     });
     CONTEXT.idt.set_handler(1, isr_db);
 
-    let isr_nmi = make_idt_entry!(isr2, esf, ExceptionStackFrame, false, {
+    let isr_nmi = make_idt_entry!(isr2, esf: &ExceptionStackFrame, false, {
         panic!("Non-Maskable-Interrupt Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(2, isr_nmi);
 
-    let isr_bp = make_idt_entry!(isr3, esf, ExceptionStackFrame, false, {
+    let isr_bp = make_idt_entry!(isr3, esf: &ExceptionStackFrame, false, {
         panic!("Breakpoint Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(3, isr_bp);
 
-    let isr_of = make_idt_entry!(isr4, esf, ExceptionStackFrame, false, {
+    let isr_of = make_idt_entry!(isr4, esf: &ExceptionStackFrame, false, {
         panic!("Overflow Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(4, isr_of);
 
-    let isr_br = make_idt_entry!(isr5, esf, ExceptionStackFrame, false, {
+    let isr_br = make_idt_entry!(isr5, esf: &ExceptionStackFrame, false, {
         panic!("Bound-Range Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(5, isr_br);
 
-    let isr_ud = make_idt_entry!(isr6, esf, ExceptionStackFrame, false, {
+    let isr_ud = make_idt_entry!(isr6, esf: &ExceptionStackFrame, false, {
         panic!("Invalid-Opcode Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(6, isr_ud);
 
-    let isr_nm = make_idt_entry!(isr7, esf, ExceptionStackFrame, false, {
+    let isr_nm = make_idt_entry!(isr7, esf: &ExceptionStackFrame, false, {
         panic!("Device-Not-Available Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(7, isr_nm);
 
-    let isr_df = make_idt_entry!(isr8, esf, ErrorExceptionStackFrame, false, {
+    let isr_df = make_idt_entry!(isr8, esf: &ErrorExceptionStackFrame, false, {
         panic!("Double-Fault Exception occurred. Exception Information: \n{}",
                esf);
     });
@@ -278,30 +280,30 @@ pub extern "C" fn kmain() -> ! {
 
     // 9 Coprocessor-Segment-Overrun
 
-    let isr_ts = make_idt_entry!(isr10, esf, ErrorExceptionStackFrame, false, {
+    let isr_ts = make_idt_entry!(isr10, esf: &ErrorExceptionStackFrame, false, {
         panic!("Invalid-TSS Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(10, isr_ts);
 
-    let isr_np = make_idt_entry!(isr11, esf, ErrorExceptionStackFrame, false, {
+    let isr_np = make_idt_entry!(isr11, esf: &ErrorExceptionStackFrame, false, {
         panic!("Segment-Not-Present Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(11, isr_np);
 
-    let isr_ss = make_idt_entry!(isr12, esf, ErrorExceptionStackFrame, false, {
+    let isr_ss = make_idt_entry!(isr12, esf: &ErrorExceptionStackFrame, false, {
         panic!("Stack Exception occurred. Exception Information: \n{}", esf);
     });
     CONTEXT.idt.set_handler(12, isr_ss);
 
-    let isr_gp = make_idt_entry!(isr13, esf, ErrorExceptionStackFrame, false, {
+    let isr_gp = make_idt_entry!(isr13, esf: &ErrorExceptionStackFrame, false, {
         panic!("General-Protection Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(13, isr_gp);
 
-    let isr_pf = make_idt_entry!(isr14, esf, ErrorExceptionStackFrame, false, {
+    let isr_pf = make_idt_entry!(isr14, esf: &ErrorExceptionStackFrame, false, {
         panic!("Page-Fault Exception occurred while accessing : {:X}
         Exception Information:\n{}",
                unsafe { get_register!("cr2") },
@@ -312,13 +314,13 @@ pub extern "C" fn kmain() -> ! {
     // 15 Reserved
     // 16 x87 Floating-Point Exception-Pending
 
-    let isr_ac = make_idt_entry!(isr17, esf, ErrorExceptionStackFrame, false, {
+    let isr_ac = make_idt_entry!(isr17, esf: &ErrorExceptionStackFrame, false, {
         panic!("Alignment-Check fault occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(17, isr_ac);
 
-    let isr_mc = make_idt_entry!(isr17, esf, ExceptionStackFrame, false, {
+    let isr_mc = make_idt_entry!(isr17, esf: &ExceptionStackFrame, false, {
         panic!("Machine-Check fault occurred. Exception Information: \n{}",
                esf);
     });
@@ -328,7 +330,7 @@ pub extern "C" fn kmain() -> ! {
     // Timer ISR to increase the clock and call the scheduler
     // If the scheduler choses a different task, the dispatcher
     // must be called by the interrupt return (`iretq`)
-    let timer = make_idt_entry!(isr32, esf, ExceptionStackFrame, true, {
+    let timer = make_idt_entry!(isr32, esf: &mut ExceptionStackFrame, true, {
         let rbp_on_stack: *mut usize = unsafe { (get_register!("rbp") as *mut usize) };
 
         // The prologue decreased the address by the register pushes
@@ -386,13 +388,15 @@ pub extern "C" fn kmain() -> ! {
                 let preempted_esf = esf.clone();
                 let last_scheduled_task = tsi.current_task;
 
-                // assume that the current task had time to run if the stack pointer has been set accordingly
+                // assume that the current task had time to run if the stackframe pointer has been set accordingly
                 let current_task_dispatched = tsi.get_current_task()
-                    .get_stack()
-                    .contains(esf.stack_pointer);
+                    .stack
+                    .contains(registers.rbp);
                 if !current_task_dispatched {
                     *esf = tsi.get_current_task().esf;
                     *registers = tsi.get_current_task().registers;
+                } else if !tsi.get_current_task().stack.contains(esf.stack_pointer) {
+                    panic!("Stack overflow in task {}!\nStack: {:x}\nESF: {:x}\nREGS: {:x}", tsi.current_task, tsi.get_current_task().stack, esf, registers);
                 } else if tsi.schedule_next() {
                     tsi.get_current_task_mut().registers = *registers;
                     *esf = *tsi.mangle_esf_for_next(esf);
@@ -449,7 +453,7 @@ pub extern "C" fn kmain() -> ! {
 
     // Keyboard uses IRQ1 and PIC1 has been remapped to 0x20 (32); therefore
     // the index in the IDT for IRQ1 will be 32 + 1 = 33
-    let keyboard = make_idt_entry!(isr33, esf, ExceptionStackFrame, true, {
+    let keyboard = make_idt_entry!(isr33, esf: &ExceptionStackFrame, true, {
         // Ignore the esf
         let _ = esf;
 
@@ -531,20 +535,32 @@ pub fn stack_debug() {
 }
 
 const STACKS_START: usize = 0x200_000; // 2MiB
-const STACK_SIZE: usize = 0x100_000; // 1MiB
+const STACK_SIZE: usize = 0x02_000; // 64KiB
 const STACK_ALIGNMENT: usize = 0x10;
-const TASK0_STACK: tasks::stack::Stack = STACKS_START + 0 * STACK_SIZE..
-                                         STACKS_START + 1 * STACK_SIZE;
-const TASK1_STACK: tasks::stack::Stack = STACKS_START + 1 * STACK_SIZE..
-                                         STACKS_START + 2 * STACK_SIZE;
-const TASK2_STACK: tasks::stack::Stack = STACKS_START + 2 * STACK_SIZE..
-                                         STACKS_START + 3 * STACK_SIZE;
+use tasks::stack::Stack;
+const TASK0_STACK: Stack = Stack{bottom: STACKS_START + 0 * STACK_SIZE, top:
+                                         STACKS_START + 1 * STACK_SIZE};
+const TASK1_STACK: Stack = Stack{bottom: STACKS_START + 1 * STACK_SIZE, top:
+                                         STACKS_START + 2 * STACK_SIZE};
+const TASK2_STACK: Stack = Stack{bottom: STACKS_START + 2 * STACK_SIZE, top:
+                                         STACKS_START + 3 * STACK_SIZE};
 
 /// Scheduler and Dispatch function - called only via the timer interrupt
 ///
 #[naked]
 fn schedule_and_dispatch() {
-    let te = TSI.lock().get_current_task().clone();
+    let rbp;
+    let rsp;
+    let rip;
+
+    {
+        let tsi = TSI.lock();
+        let te = tsi.get_current_task();
+
+        rbp = te.stack.top;
+        rsp = te.esf.stack_pointer;
+        rip = te.esf.instruction_pointer;
+    };
 
     unsafe {
         asm!("
@@ -554,9 +570,9 @@ fn schedule_and_dispatch() {
             // output operands
             :
             // input operands
-            : "r"(te.stack_bottom)
-                "r"(te.esf.instruction_pointer)
-                "{rsp}="(te.esf.stack_pointer)
+            : "r"(rbp)
+                "r"(rip)
+                "{rsp}="(rsp)
             // clobbers
             :
             // options
@@ -564,22 +580,18 @@ fn schedule_and_dispatch() {
     };
 }
 
-static mut TASK1_CTR: usize = 0;
-static mut TASK1_RBP: usize = 0;
-static mut TASK1_RSP: usize = 0;
 fn task1() {
     let mut i: u64 = 2;
     let mut prev_i: u64 = 0;
-    loop {
-        unsafe {
-            TASK1_CTR = TASK1_CTR + 1;
-            TASK1_RBP = get_register!("rbp");
-            TASK1_RSP = get_register!("rsp");
-            if TASK1_RSP >= TASK1_RBP || TASK1_RBP - TASK1_RSP > STACK_SIZE {
-                panic!("task1 rbp/rsp: {:x}/{:x}", TASK1_RBP, TASK1_RSP);
-            }
-        }
 
+    const slice_length: usize = 1024;
+    let slice: [u64; slice_length] = [0xdeadbeef; slice_length];
+    let slice_start_addr = &slice[0] as *const u64;
+    let slice_end_addr = &slice[slice_length-1] as *const u64;
+
+    kprintln!(CONTEXT, "slice info: start: {:?} end {:?}", slice_start_addr, slice_end_addr);
+
+    loop {
         if i != prev_i + 2 || i % 2 != 0 {
             panic!("Wrong calculations: {}/{:x} {}/{:x}",
                    i,
@@ -593,22 +605,10 @@ fn task1() {
     }
 }
 
-static mut TASK2_CTR: usize = 0;
-static mut TASK2_RBP: usize = 0;
-static mut TASK2_RSP: usize = 0;
 fn task2() {
     let mut i: u64 = 3;
     let mut prev_i: u64 = 1;
     loop {
-        unsafe {
-            TASK2_CTR = TASK2_CTR + 1;
-            TASK2_RBP = get_register!("rbp");
-            TASK2_RSP = get_register!("rsp");
-            if TASK2_RSP >= TASK2_RBP || TASK2_RBP - TASK2_RSP > STACK_SIZE {
-                panic!("task1 rbp/rsp: {:x}/{:x}", TASK2_RBP, TASK2_RSP);
-            }
-        }
-
         if i != prev_i + 2 || i % 2 != 1 {
             panic!("Wrong calculations: {}/{:x} {}/{:x}",
                    i,

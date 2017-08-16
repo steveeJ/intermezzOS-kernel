@@ -8,8 +8,19 @@ extern crate spin;
 use spin::Mutex;
 
 pub mod stack {
+    use core;
     use core::ops::Range;
-    pub type Stack = Range<usize>;
+
+    pub struct Stack {
+        pub bottom: usize,
+        pub top: usize,
+    }
+
+    impl Stack {
+        pub fn contains(&self, t: usize) -> bool {
+            self.bottom <= t && t <= self.top
+        }
+    }
 
     trait IsStack {
         fn is_initialized(&self) -> bool;
@@ -18,6 +29,13 @@ pub mod stack {
     impl IsStack for Stack {
         fn is_initialized(&self) -> bool {
             unimplemented!()
+        }
+    }
+
+
+    impl core::fmt::LowerHex for Stack {
+        fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+            write!(f, "0x{:x}..0x{:x}", self.bottom, self.top)
         }
     }
 }
@@ -105,19 +123,14 @@ impl TaskStateInformation {
     }
 }
 
-#[derive(Clone,Copy)]
 pub struct TaskEntry {
     pub name: &'static str,
     pub esf: interrupts::ExceptionStackFrame,
-    pub stack_bottom: usize,
-    pub stack_top: usize,
+    pub stack: stack::Stack,
     pub registers: TaskRegisters,
 }
 
 impl TaskEntry {
-    pub fn get_stack(&self) -> stack::Stack {
-        self.stack_bottom..self.stack_top
-    }
 }
 
 #[derive(Clone,Copy)]
@@ -165,7 +178,29 @@ impl TaskRegisters {
 impl core::fmt::Display for TaskRegisters {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f,
-               "rax: 0x{} rbx: 0x{} rcx: 0x{} rdx: 0x{} rsi: 0x{} rdi: 0x{} r8:  0x{} r9:  0x{} r10: 0x{} r11: 0x{} r12: 0x{} r13: 0x{} r14: 0x{} r15: 0x{} rbp: 0x{}",
+               "rax: {} rbx: {} rcx: {} rdx: {} rsi: {} rdi: {} r8:  {} r9:  {} r10: {} r11: {} r12: {} r13: {} r14: {} r15: {} rbp: {}",
+               self.rax,
+               self.rbx,
+               self.rcx,
+               self.rdx,
+               self.rsi,
+               self.rdi,
+               self.r8,
+               self.r9,
+               self.r10,
+               self.r11,
+               self.r12,
+               self.r13,
+               self.r14,
+               self.r15,
+               self.rbp)
+    }
+}
+
+impl core::fmt::LowerHex for TaskRegisters {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        write!(f,
+               "rax: 0x{:x} rbx: 0x{:x} rcx: 0x{:x} rdx: 0x{:x} rsi: 0x{:x} rdi: 0x{:x} r8:  0x{:x} r9:  0x{:x} r10: 0x{:x} r11: 0x{:x} r12: 0x{:x} r13: 0x{:x} r14: 0x{:x} r15: 0x{:x} rbp: 0x{:x}",
                self.rax,
                self.rbx,
                self.rcx,

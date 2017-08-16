@@ -34,6 +34,24 @@ pub struct ExceptionStackFrame {
     pub stack_segment: u64,
 }
 
+impl core::fmt::LowerHex for ExceptionStackFrame {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        write!(f, "
+        Instruction Pointer: 0x{:x}
+        Code Segment: 0x{:x}
+        CPU Flags: 0x{:x}
+        Stack Pointer: 0x{:x}
+        Stack Segment: 0x{:x}",
+            self.instruction_pointer,
+            self.code_segment,
+            self.cpu_flags,
+            self.stack_pointer,
+            self.stack_segment,
+        );
+        Ok(())
+    }
+}
+
 impl core::fmt::Display for ExceptionStackFrame {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "
@@ -86,15 +104,34 @@ pub struct ErrorExceptionStackFrame {
     pub stack_segment: u64,
 }
 
+impl core::fmt::LowerHex for ErrorExceptionStackFrame {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        write!(f, "
+        Error Code: 0x{:x}
+        Instruction Pointer: 0x{:x}
+        Code Segment: 0x{:x}
+        CPU Flags: 0x{:x}
+        Stack Pointer: 0x{:x}
+        Stack Segment: 0x{:x}",
+            self.error_code,
+            self.instruction_pointer,
+            self.code_segment,
+            self.cpu_flags,
+            self.stack_pointer,
+            self.stack_segment,
+        );
+        Ok(())
+    }
+}
 impl core::fmt::Display for ErrorExceptionStackFrame {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "
-        Error Code: 0x{:X}
-        Instruction Pointer: 0x{:X}
-        Code Segment: 0x{:X}
-        CPU Flags: 0x{:X}
-        Stack Pointer: 0x{:X}
-        Stack Segment: 0x{:X}",
+        Error Code: 0x{:x}
+        Instruction Pointer: 0x{:x}
+        Code Segment: 0x{:x}
+        CPU Flags: 0x{:x}
+        Stack Pointer: 0x{:x}
+        Stack Segment: 0x{:x}",
             self.error_code,
             self.instruction_pointer,
             self.code_segment,
@@ -111,11 +148,13 @@ impl core::fmt::Display for ErrorExceptionStackFrame {
 /// Creates an IDT entry that executes the expression in `body`.
 #[macro_export]
 macro_rules! make_idt_entry {
-    ($name:ident, $esf:ident, $esf_type:ident, $ir_gate:expr, $body:expr) => {{
+    ($name:ident, $esf:ident: $esfty:ty, $ir_gate:expr, $body:expr) => {{
 
         use x86::bits64::irq::IdtEntry;
-        use interrupts::$esf_type;
-        extern "x86-interrupt" fn $name($esf: &mut $esf_type) {
+        use interrupts::ExceptionStackFrame;
+        use interrupts::ErrorExceptionStackFrame;
+
+        extern "x86-interrupt" fn $name($esf: $esfty) {
             unsafe {
                 asm!(""
                     // output operands
