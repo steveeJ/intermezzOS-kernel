@@ -44,6 +44,11 @@ run-debug: iso-debug
 gdb: cargo-debug
 	@gdb "target/x86_64-unknown-intermezzos-gnu/debug/intermezzos" -ex "target remote :1234" -tui -x gdbcmds
 
+objump: 
+	objdump --disassembler-options=intel-nmemonic -d target/x86_64-unknown-intermezzos-gnu/release/intermezzos | less
+
+objump-debug: 
+	objdump --disassembler-options=intel-nmemonic -d target/x86_64-unknown-intermezzos-gnu/debug/intermezzos | less
 
 clean:
 	rm -Rf target
