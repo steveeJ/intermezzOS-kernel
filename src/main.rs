@@ -86,6 +86,7 @@ lazy_static! {
                     },
                     stack: TASK0_STACK,
                     registers: tasks::TaskRegisters::empty(),
+                    blocked: false,
                     },
             tasks::TaskEntry {
                     name: "Task 1",
@@ -98,6 +99,7 @@ lazy_static! {
                     },
                     stack: TASK1_STACK,
                     registers: tasks::TaskRegisters::empty(),
+                    blocked: false,
                     },
             tasks::TaskEntry {
                     name: "Task 2",
@@ -110,6 +112,7 @@ lazy_static! {
                     },
                     stack: TASK2_STACK,
                     registers: tasks::TaskRegisters::empty(),
+                    blocked: false,
                     },
         ];
         Mutex::new(tasks::TaskStateInformation::new(tasklist))
@@ -120,7 +123,6 @@ lazy_static! {
 
 #[no_mangle]
 pub extern "C" fn kinit() {
-
     unsafe {
         asm!("
         nop
@@ -183,7 +185,7 @@ fn paging_demo() {
         pagetable_4_upper = ::core::slice::from_raw_parts(cr3_upper, PAGETABLE_4_SIZE);
     }
     kprintln_try!(CONTEXT,
-                  "pagetable_4_lower[0]: {:x} / {:b}",
+                  "pagetable_4_lower[  0]: {:x} / {:b}",
                   pagetable_4_lower[0],
                   pagetable_4_lower[0]);
     kprintln_try!(CONTEXT,
@@ -221,7 +223,8 @@ pub extern "C" fn kmain() -> ! {
         x86::shared::irq::disable();
     }
 
-    paging_demo();
+    // paging_demo();
+    // hlt();
 
     // initilaze_tss();
 
@@ -344,6 +347,7 @@ pub extern "C" fn kmain() -> ! {
 
         let begin_tsc = unsafe { x86::bits64::time::rdtsc() };
 
+
         CLOCK.tick();
 
         #[naked]
@@ -389,14 +393,29 @@ pub extern "C" fn kmain() -> ! {
                 let last_scheduled_task = tsi.current_task;
 
                 // assume that the current task had time to run if the stackframe pointer has been set accordingly
-                let current_task_dispatched = tsi.get_current_task()
-                    .stack
-                    .contains(registers.rbp);
-                if !current_task_dispatched {
+                let continue_to_next = {
+                    tsi.get_current_task().stack.contains(registers.rbp) ||
+                    {
+                        if !tsi.get_current_task().stack.contains(esf.stack_pointer) {
+                            kprintln_try!(CONTEXT,
+                                          "Stack overflow in task {}!\nStack: {:x}\nESF: {:x}\nREGS: {:x}",
+                                          tsi.current_task,
+                                          tsi.get_current_task().stack,
+                                          esf,
+                                          registers);
+                            tsi.get_current_task_mut().blocked = true;
+                        }
+                        true
+                    }
+                };
+
+                if !continue_to_next {
                     *esf = tsi.get_current_task().esf;
                     *registers = tsi.get_current_task().registers;
-                } else if !tsi.get_current_task().stack.contains(esf.stack_pointer) {
-                    panic!("Stack overflow in task {}!\nStack: {:x}\nESF: {:x}\nREGS: {:x}", tsi.current_task, tsi.get_current_task().stack, esf, registers);
+                    kprintln_try!(CONTEXT,
+                                  "{:x} not in {:x}",
+                                  registers.rbp,
+                                  tsi.get_current_task().stack);
                 } else if tsi.schedule_next() {
                     tsi.get_current_task_mut().registers = *registers;
                     *esf = *tsi.mangle_esf_for_next(esf);
@@ -534,16 +553,22 @@ pub fn stack_debug() {
     }
 }
 
-const STACKS_START: usize = 0x200_000; // 2MiB
-const STACK_SIZE: usize = 0x02_000; // 64KiB
-const STACK_ALIGNMENT: usize = 0x10;
+const STACKS_TOP: usize = 0x1_000_000; // 15.7MiB
+const STACK_SIZE: usize = 0x_002_000; // 64KiB
+// const STACK_ALIGNMENT: usize = 0x10;
 use tasks::stack::Stack;
-const TASK0_STACK: Stack = Stack{bottom: STACKS_START + 0 * STACK_SIZE, top:
-                                         STACKS_START + 1 * STACK_SIZE};
-const TASK1_STACK: Stack = Stack{bottom: STACKS_START + 1 * STACK_SIZE, top:
-                                         STACKS_START + 2 * STACK_SIZE};
-const TASK2_STACK: Stack = Stack{bottom: STACKS_START + 2 * STACK_SIZE, top:
-                                         STACKS_START + 3 * STACK_SIZE};
+const TASK0_STACK: Stack = Stack {
+    top: STACKS_TOP - 10 * STACK_SIZE,
+    bottom: STACKS_TOP - (10 + 1) * STACK_SIZE,
+};
+const TASK1_STACK: Stack = Stack {
+    top: STACKS_TOP - 20 * STACK_SIZE,
+    bottom: STACKS_TOP - (20 + 1) * STACK_SIZE,
+};
+const TASK2_STACK: Stack = Stack {
+    top: STACKS_TOP - 30 * STACK_SIZE,
+    bottom: STACKS_TOP - (30 + 1) * STACK_SIZE,
+};
 
 /// Scheduler and Dispatch function - called only via the timer interrupt
 ///
@@ -567,30 +592,44 @@ fn schedule_and_dispatch() {
             mov rbp, $0
             jmp $1
             "
-            // output operands
-            :
-            // input operands
-            : "r"(rbp)
-                "r"(rip)
-                "{rsp}="(rsp)
-            // clobbers
-            :
-            // options
-            : "intel" "volatile");
+            : // output operands
+            : // input operands
+            "r"(rbp)
+            "r"(rip)
+            "{rsp}="(rsp)
+            : // clobbers
+            : // options
+            "intel" "volatile"
+            );
     };
 }
 
-fn task1() {
-    let mut i: u64 = 2;
-    let mut prev_i: u64 = 0;
-
-    const slice_length: usize = 1024;
+fn fill_stack(i: u64, d: u64) -> u64 {
+    const slice_length: usize = 1;
     let slice: [u64; slice_length] = [0xdeadbeef; slice_length];
     let slice_start_addr = &slice[0] as *const u64;
-    let slice_end_addr = &slice[slice_length-1] as *const u64;
+    let slice_end_addr = &slice[slice_length - 1] as *const u64;
 
-    kprintln!(CONTEXT, "slice info: start: {:?} end {:?}", slice_start_addr, slice_end_addr);
+    let mut j = 1000;
+    while {
+              j -= 1;
+              j > 0
+          } {
+        nop();
+    }
+    if i < d { fill_stack(i + 1, d) } else { i }
+}
 
+fn finish() {
+    loop {
+        hlt();
+    }
+}
+
+fn task1() {
+    fill_stack(0, 1000000);
+    let mut i: u64 = 2;
+    let mut prev_i: u64 = 0;
     loop {
         if i != prev_i + 2 || i % 2 != 0 {
             panic!("Wrong calculations: {}/{:x} {}/{:x}",
@@ -602,6 +641,8 @@ fn task1() {
         }
         prev_i = i;
         i += 2;
+
+        ge(i as isize, prev_i as isize);
     }
 }
 
@@ -619,7 +660,16 @@ fn task2() {
         }
         prev_i = i;
         i += 2;
+
+        ge(i as isize, prev_i as isize);
     }
+}
+
+#[inline(never)]
+fn ge(a: isize, b: isize) -> (bool, isize) {
+    let diff = a - b;
+    let ge = a >= b;
+    (ge, diff)
 }
 
 // fn test_libfringe() {

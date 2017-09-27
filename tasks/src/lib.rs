@@ -60,7 +60,11 @@ impl TaskStateInformation {
     /// Choose the next task.
     /// Return true if tasks will be switched
     pub fn schedule_next(&mut self) -> bool {
-        self.next_task = (self.current_task + 1) % self.tasks.len();
+        self.next_task = self.current_task;
+        while {
+                  self.next_task = (self.next_task + 1) % self.tasks.len();
+                  self.next_task != self.current_task && self.tasks[self.next_task].blocked == true
+              } {}
         self.next_task != self.current_task
     }
 
@@ -128,10 +132,10 @@ pub struct TaskEntry {
     pub esf: interrupts::ExceptionStackFrame,
     pub stack: stack::Stack,
     pub registers: TaskRegisters,
+    pub blocked: bool,
 }
 
-impl TaskEntry {
-}
+impl TaskEntry {}
 
 #[derive(Clone,Copy)]
 #[repr(C,packed)]
