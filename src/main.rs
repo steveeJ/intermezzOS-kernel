@@ -6,9 +6,13 @@
 #![feature(use_extern_macros)]
 #![feature(range_contains)]
 #![feature(compiler_builtins_lib)]
+#![feature(trace_macros)]
+
 
 #![no_std]
 #![no_main]
+
+trace_macros!(true);
 
 extern crate compiler_builtins;
 
@@ -72,7 +76,6 @@ lazy_static! {
         // (0x71ae) as u16);
         core::u16::MAX);
 
-
     static ref TSI: Mutex<tasks::TaskStateInformation> = {
         let tasklist = [
             tasks::TaskEntry {
@@ -117,6 +120,64 @@ lazy_static! {
         ];
         Mutex::new(tasks::TaskStateInformation::new(tasklist))
     };
+}
+
+/// Creates an IDT entry.
+///
+/// Creates an IDT entry that executes the expression in `body`.
+#[macro_export]
+macro_rules! make_idt_entry {
+    (@extract_path &mut$e:tt) => {$e};
+    (@extract_path &$e:tt) => {$e};
+    (@extract_path $e:tt) => {$e};
+
+    (@mut_err, $name:ident, $esf:ident, $ir_gate:expr, $body:expr) => {{
+        make_idt_entry!($name, $esf: &mut ErrorExceptionStackFrame, $ir_gate, $body)
+    }};
+    (@err, $name:ident, $esf:ident, $ir_gate:expr, $body:expr) => {{
+        make_idt_entry!($name, $esf: &ErrorExceptionStackFrame, $ir_gate, $body)
+    }};
+    (@mut, $name:ident, $esf:ident, $ir_gate:expr, $body:expr) => {{
+        make_idt_entry!($name, $esf: &mut ExceptionStackFrame, $ir_gate, $body)
+    }};
+
+    ($name:ident, $esf:ident, $ir_gate:expr, $body:expr) => {{
+        make_idt_entry!($name, $esf, &ExceptionStackFrame, $ir_gate, $body)
+    }};
+
+    // ($t:ident) => {use interrupts::$t};
+    ($name:ident, $esf:ident, $esfty:expr, $ir_gate:expr, $body:expr) => {{
+        use interrupts::make_idt_entry!(@extract_path $esfty);
+        use x86::bits64::irq::IdtEntry;
+        use x86::shared::paging::VAddr;
+        use x86::shared::PrivilegeLevel;
+
+        extern "x86-interrupt" fn $name($esf: $esfty) {
+            unsafe {
+                asm!(""
+                    // output operands
+                    :
+                    // input operands
+                    :
+                    // clobbers
+                    : "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8",  "r9",  "r10", "r11", "r12", "r13", "r14", "r15", "rbp"
+                    // options
+                    : "intel" "volatile"
+                );
+            }
+            $body
+        };
+
+
+        let handler = VAddr::from_usize($name as usize);
+
+        // last is "block". It influences the Gate's type field as follows:
+        // * false: 1111 (64-bit Trap Gate)
+        // * true:  1110 (64-bit Interrupt Gate)
+        // Ref.: AMD64 Architecture Programmer’s Manual Volume 2: System Programming
+        // Table 4-6. System-Segment Descriptor Types—Long Mode (continued)
+        IdtEntry::new(handler, 0x8, PrivilegeLevel::Ring0, $ir_gate)
+    }};
 }
 
 // static TASK_COUNTER: &'static mut u64 = &mut 0;
@@ -228,54 +289,54 @@ pub extern "C" fn kmain() -> ! {
 
     // initilaze_tss();
 
-    let isr_de = make_idt_entry!(isr0, esf: &ExceptionStackFrame, false, {
+    let isr_de = make_idt_entry!(isr0, esf, false, {
         panic!("Divide-by-Zero-Error Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(0, isr_de);
 
-    let isr_db = make_idt_entry!(isr1, esf: &ExceptionStackFrame, false, {
+    let isr_db = make_idt_entry!(isr1, esf, false, {
         panic!("Debug Exception occurred. Exception Information: \n{}", esf);
     });
     CONTEXT.idt.set_handler(1, isr_db);
 
-    let isr_nmi = make_idt_entry!(isr2, esf: &ExceptionStackFrame, false, {
+    let isr_nmi = make_idt_entry!(isr2, esf, false, {
         panic!("Non-Maskable-Interrupt Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(2, isr_nmi);
 
-    let isr_bp = make_idt_entry!(isr3, esf: &ExceptionStackFrame, false, {
+    let isr_bp = make_idt_entry!(isr3, esf, false, {
         panic!("Breakpoint Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(3, isr_bp);
 
-    let isr_of = make_idt_entry!(isr4, esf: &ExceptionStackFrame, false, {
+    let isr_of = make_idt_entry!(isr4, esf, false, {
         panic!("Overflow Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(4, isr_of);
 
-    let isr_br = make_idt_entry!(isr5, esf: &ExceptionStackFrame, false, {
+    let isr_br = make_idt_entry!(isr5, esf, false, {
         panic!("Bound-Range Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(5, isr_br);
 
-    let isr_ud = make_idt_entry!(isr6, esf: &ExceptionStackFrame, false, {
+    let isr_ud = make_idt_entry!(isr6, esf, false, {
         panic!("Invalid-Opcode Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(6, isr_ud);
 
-    let isr_nm = make_idt_entry!(isr7, esf: &ExceptionStackFrame, false, {
+    let isr_nm = make_idt_entry!(isr7, esf, false, {
         panic!("Device-Not-Available Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(7, isr_nm);
 
-    let isr_df = make_idt_entry!(isr8, esf: &ErrorExceptionStackFrame, false, {
+    let isr_df = make_idt_entry!(isr8, esf, false, {
         panic!("Double-Fault Exception occurred. Exception Information: \n{}",
                esf);
     });
@@ -283,30 +344,30 @@ pub extern "C" fn kmain() -> ! {
 
     // 9 Coprocessor-Segment-Overrun
 
-    let isr_ts = make_idt_entry!(isr10, esf: &ErrorExceptionStackFrame, false, {
+    let isr_ts = make_idt_entry!(@err, isr10, esf, false, {
         panic!("Invalid-TSS Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(10, isr_ts);
 
-    let isr_np = make_idt_entry!(isr11, esf: &ErrorExceptionStackFrame, false, {
+    let isr_np = make_idt_entry!(@err, isr11, esf, false, {
         panic!("Segment-Not-Present Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(11, isr_np);
 
-    let isr_ss = make_idt_entry!(isr12, esf: &ErrorExceptionStackFrame, false, {
+    let isr_ss = make_idt_entry!(@err, isr12, esf, false, {
         panic!("Stack Exception occurred. Exception Information: \n{}", esf);
     });
     CONTEXT.idt.set_handler(12, isr_ss);
 
-    let isr_gp = make_idt_entry!(isr13, esf: &ErrorExceptionStackFrame, false, {
+    let isr_gp = make_idt_entry!(@err, isr13, esf, false, {
         panic!("General-Protection Exception occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(13, isr_gp);
 
-    let isr_pf = make_idt_entry!(isr14, esf: &ErrorExceptionStackFrame, false, {
+    let isr_pf = make_idt_entry!(@err, isr14, esf, false, {
         panic!("Page-Fault Exception occurred while accessing : {:X}
         Exception Information:\n{}",
                unsafe { get_register!("cr2") },
@@ -317,13 +378,13 @@ pub extern "C" fn kmain() -> ! {
     // 15 Reserved
     // 16 x87 Floating-Point Exception-Pending
 
-    let isr_ac = make_idt_entry!(isr17, esf: &ErrorExceptionStackFrame, false, {
+    let isr_ac = make_idt_entry!(@err, isr17, esf, false, {
         panic!("Alignment-Check fault occurred. Exception Information: \n{}",
                esf);
     });
     CONTEXT.idt.set_handler(17, isr_ac);
 
-    let isr_mc = make_idt_entry!(isr17, esf: &ExceptionStackFrame, false, {
+    let isr_mc = make_idt_entry!(isr17, esf, false, {
         panic!("Machine-Check fault occurred. Exception Information: \n{}",
                esf);
     });
@@ -333,7 +394,7 @@ pub extern "C" fn kmain() -> ! {
     // Timer ISR to increase the clock and call the scheduler
     // If the scheduler choses a different task, the dispatcher
     // must be called by the interrupt return (`iretq`)
-    let timer = make_idt_entry!(isr32, esf: &mut ExceptionStackFrame, true, {
+    let timer = make_idt_entry!(@mut, isr32, esf, true, {
         let rbp_on_stack: *mut usize = unsafe { (get_register!("rbp") as *mut usize) };
 
         // The prologue decreased the address by the register pushes
@@ -472,7 +533,7 @@ pub extern "C" fn kmain() -> ! {
 
     // Keyboard uses IRQ1 and PIC1 has been remapped to 0x20 (32); therefore
     // the index in the IDT for IRQ1 will be 32 + 1 = 33
-    let keyboard = make_idt_entry!(isr33, esf: &ExceptionStackFrame, true, {
+    let keyboard = make_idt_entry!(isr33, esf, true, {
         // Ignore the esf
         let _ = esf;
 

@@ -1,10 +1,13 @@
 //! This module contains methods and macros to create and register interrupt descriptors and
 //! interrupt handlers
 
+#![feature(trace_macros)]
 #![feature(asm)]
 #![feature(naked_functions)]
 #![feature(const_fn)]
 #![no_std]
+
+trace_macros!(true);
 
 extern crate x86;
 extern crate pic;
@@ -143,46 +146,6 @@ impl core::fmt::Display for ErrorExceptionStackFrame {
     }
 }
 
-/// Creates an IDT entry.
-///
-/// Creates an IDT entry that executes the expression in `body`.
-#[macro_export]
-macro_rules! make_idt_entry {
-    ($name:ident, $esf:ident: $esfty:ty, $ir_gate:expr, $body:expr) => {{
-
-        use x86::bits64::irq::IdtEntry;
-        use interrupts::ExceptionStackFrame;
-        use interrupts::ErrorExceptionStackFrame;
-
-        extern "x86-interrupt" fn $name($esf: $esfty) {
-            unsafe {
-                asm!(""
-                    // output operands
-                    :
-                    // input operands
-                    :
-                    // clobbers
-                    : "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8",  "r9",  "r10", "r11", "r12", "r13", "r14", "r15", "rbp"
-                    // options
-                    : "intel" "volatile"
-                );
-            }
-            $body
-        };
-
-        use x86::shared::paging::VAddr;
-        use x86::shared::PrivilegeLevel;
-
-        let handler = VAddr::from_usize($name as usize);
-
-        // last is "block". It influences the Gate's type field as follows:
-        // * false: 1111 (64-bit Trap Gate)
-        // * true:  1110 (64-bit Interrupt Gate)
-        // Ref.: AMD64 Architecture Programmer’s Manual Volume 2: System Programming
-        // Table 4-6. System-Segment Descriptor Types—Long Mode (continued)
-        IdtEntry::new(handler, 0x8, PrivilegeLevel::Ring0, $ir_gate)
-    }};
-}
 
 /// The Interrupt Descriptor Table
 ///
