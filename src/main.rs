@@ -69,8 +69,8 @@ lazy_static! {
     /// 71ae
     /// ```
     static ref CLOCK: clock::pit::Pit = clock::pit::new(0,
-        // (0x71ae) as u16);
-        core::u16::MAX);
+        (0x71ae) as u16);
+        // core::u16::MAX);
 
 
     static ref TSI: Mutex<tasks::TaskStateInformation> = {
@@ -348,7 +348,7 @@ pub extern "C" fn kmain() -> ! {
         let begin_tsc = unsafe { x86::bits64::time::rdtsc() };
 
 
-        CLOCK.tick();
+        unsafe { CLOCK.tick() };
 
         #[naked]
         #[inline(always)]
@@ -369,7 +369,6 @@ pub extern "C" fn kmain() -> ! {
         fn dummy_esf_fn(esf: &mut ExceptionStackFrame) {
             let _ = esf;
         }
-
         fn test_time(interval: &str,
                      ticks: &u64,
                      uptime: &clock::Duration,
@@ -495,8 +494,10 @@ pub extern "C" fn kmain() -> ! {
     panic!("the boot task was rescheduled");
 }
 
-fn task0() {
-    CLOCK.start();
+#[deny(unsafe_code)]
+fn task0() -> ! {
+    unsafe { CLOCK.start() };
+
     kprintln!(CONTEXT,
               "System clock set up. Frequency: {} / Resolution: {}ns",
               CLOCK.frequency,
@@ -626,7 +627,8 @@ fn finish() {
     }
 }
 
-fn task1() {
+#[deny(unsafe_code)]
+fn task1() -> ! {
     fill_stack(0, 1000000);
     let mut i: u64 = 2;
     let mut prev_i: u64 = 0;
@@ -646,7 +648,8 @@ fn task1() {
     }
 }
 
-fn task2() {
+#[deny(unsafe_code)]
+fn task2() -> ! {
     let mut i: u64 = 3;
     let mut prev_i: u64 = 1;
     loop {

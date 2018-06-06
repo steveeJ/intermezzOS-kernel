@@ -21,7 +21,7 @@ pub mod consts {
 }
 
 impl Duration {
-    fn hms(self) -> SimpleResult<(u64,u64,u64)> {
+    fn hms(self) -> SimpleResult<(u64, u64, u64)> {
         let h = self.sec / 3600;
         let m = (self.sec % 3600) / 60;
         let s = (self.sec % 3600) % 60;
@@ -53,28 +53,32 @@ impl core::ops::Sub for Duration {
 
 impl core::fmt::Display for Duration {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "{}.{:0width$}s", self.sec, self.nsec, width=consts::NSEC_DIGITS)
+        write!(f,
+               "{}.{:0width$}s",
+               self.sec,
+               self.nsec,
+               width = consts::NSEC_DIGITS)
     }
 }
 
 /// The Clock trait is for each clock type.
 pub trait Clock {
     /// Start the clock
-    fn start(&self);
+    unsafe fn start(&self);
 
     /// Receive the frequency the clock is set for
-    fn frequency(& self) -> SimpleResult<Frequency>;
+    fn frequency(&self) -> SimpleResult<Frequency>;
 
     /// Update the internal clock counter by one.
     /// The time of one tick is `1/self.frequency()`s.
-    fn tick(&self);
+    unsafe fn tick(&self);
 
     /// Receive the current tick counter
     fn ticks(&self) -> SimpleResult<(u64, Duration)>;
 
     /// Returns the uptime as `Duration`.
     /// This assumes that **all** fired clock interrupts have successfully called `self.tick()`.
-    fn uptime(& self) -> SimpleResult<Duration>;
+    fn uptime(&self) -> SimpleResult<Duration>;
 }
 
 /// This module implements a system clock using the Programmable Interrupt Timer
@@ -97,13 +101,11 @@ pub mod pit {
         pub const CHANNEL1_IO_PORT: u16 = 0x41;
         pub const CHANNEL2_IO_PORT: u16 = 0x42;
         pub const COMMAND_PORT: u16 = 0x43;
-        pub const CHANNEL_IO_PORTS: [u16; 3] = [
-            CHANNEL0_IO_PORT,
-            CHANNEL1_IO_PORT,
-            CHANNEL2_IO_PORT
-        ];
+        pub const CHANNEL_IO_PORTS: [u16; 3] =
+            [CHANNEL0_IO_PORT, CHANNEL1_IO_PORT, CHANNEL2_IO_PORT];
     }
 
+    /// Type for the Programmable-Interrupt-Timer
     pub struct Pit {
         pub frequency: Frequency,
         divisor: u16,
@@ -116,25 +118,24 @@ pub mod pit {
         0b11000000 & channel << 6 | // channel
         0b00110000 & 0b11 << 4    | // lobyte/hibyte
         0b00001110 & 0b010 << 1   | // rate generator
-        0b00000001 & 0b0            // 16-bit binary mode
+        0b00000001 & 0b0 // 16-bit binary mode
     }
 
     pub fn new(channel: u8, divisor: u16) -> Pit {
         assert!(channel <= 2);
 
-        let freq = consts::BASE_FREQUENCY/(divisor as u32);
+        let freq = consts::BASE_FREQUENCY / (divisor as u32);
         Pit {
             frequency: freq,
             divisor: divisor,
-            resolution: NSEC_MULTIPLIER/freq as u64,
+            resolution: NSEC_MULTIPLIER / freq as u64,
             channel: channel,
             ticks_atomic: ATOMIC_USIZE_INIT,
         }
     }
 
     impl Clock for Pit {
-        fn start(&self) {
-            // TODO: check if the masks are required
+        unsafe fn start(&self) {
             let lobyte = (self.divisor & 0xFF) as u8;
             let hibyte = ((self.divisor >> 8) & 0xFF) as u8;
             unsafe {
@@ -153,10 +154,10 @@ pub mod pit {
             let sec = ticks / self.frequency as u64;
             let nsec = (ticks - sec * self.frequency as u64) * self.resolution;
 
-            Ok(Duration{
-                sec: sec,
-                nsec: nsec
-            })
+            Ok(Duration {
+                   sec: sec,
+                   nsec: nsec,
+               })
         }
 
         fn ticks(&self) -> SimpleResult<(u64, Duration)> {
@@ -164,10 +165,14 @@ pub mod pit {
             let sec = ticks / self.frequency as u64;
             let nsec = (ticks - sec * self.frequency as u64) * self.resolution;
 
-            Ok((ticks, Duration{ sec: sec, nsec: nsec }))
+            Ok((ticks,
+                Duration {
+                    sec: sec,
+                    nsec: nsec,
+                }))
         }
 
-        fn tick(&self) {
+        unsafe fn tick(&self) {
             self.ticks_atomic.fetch_add(1, Ordering::SeqCst);
         }
     }
@@ -179,8 +184,11 @@ mod tests {
 
     #[test]
     fn duration_hms() {
-        let d = Duration{sec: 3661, nsec: 5000000};
-        assert_eq!(d.hms().unwrap(),(1, 1, 1));
+        let d = Duration {
+            sec: 3661,
+            nsec: 5000000,
+        };
+        assert_eq!(d.hms().unwrap(), (1, 1, 1));
     }
 
     fn duration_sub() {
